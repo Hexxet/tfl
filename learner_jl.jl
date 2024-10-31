@@ -1,4 +1,6 @@
 using DataStructures
+using JSON
+using HTTP
 
 struct ObservationTable
     A::Set{Char}
@@ -57,7 +59,7 @@ function print_table(table::ObservationTable)
         println(join(row, "\t"))
     end
     println("-"^40)
-    low_s = [s * a for s in table.S, a in table.A if s * a ∉ table.S]
+    low_s = [s * a for s in table.S, a in table.A if s * a ∉ table.S && length(s * a) ≤ table.nodes]
     for s in low_s
         row = [s]
         for e in table.E
@@ -68,27 +70,79 @@ function print_table(table::ObservationTable)
 end
 
 function equivalence(table::ObservationTable)
-    print_table(table)
-    println("Is it equivalent (yes/no)? ")
-    is_equivalent = readline()
-    if is_equivalent == "yes"
-        return true, ""
-    else
-        println("Enter counter example: ")
-        counter_example = readline()
-        return false, counter_example
+    main_prefixes = "ε " * join(table.S, " ")
+    low_s = [s * a for s in table.S, a in table.A if s * a ∉ table.S && length(s * a) ≤ table.nodes]
+    non_main_prefixes = join(low_s, " ")
+    suffixes = "ε " * join(table.E, " ")
+    table_data = []
+    for s in table.S
+        for e in table.E
+            push!(table_data, get(table.T[s], e, false) ? "1" : "0")
+        end
+    end
+    for s in low_s
+        for e in table.E
+            push!(table_data, get(table.T[s], e, false) ? "1" : "0")
+        end
+    end
+    table_str = join(table_data, " ")
+    data = JSON.json(Dict(
+        "main_prefixes" => main_prefixes,
+        "non_main_prefixes" => non_main_prefixes,
+        "suffixes" => suffixes,
+        "table" => table_str
+    ))
+    url = "http://localhost:8095/checkTable"
+    response = HTTP.post(url, body=data, headers=["Content-Type" => "application/json"])
+    if response.status == 200
+        is_equivalent = JSON.parse(String(response.body))
+        if isnothing(is_equivalent["type"])
+            return true, ""
+        else
+            return false, is_equivalent["response"]
+        end
     end
 end
 
 function membership(word::String)
-    println("Is this \"$word\" part of the language (1/0)? ")
-    is_membership = readline()
-    if is_membership == "1"
-        return true
-    else
-        return false
+    if word == ""
+        word = "ε"
+    end
+    data = JSON.json(Dict("word" => word))
+    url = "http://localhost:8095/checkWord"
+    response = HTTP.post(url, body=data, headers=["Content-type" => "application/json"])
+    if response.status == 200
+        is_membership = JSON.parse(String(response.body))
+        if is_membership["response"]
+            return true
+        else
+            return false
+        end
     end
 end
+
+# function equivalence(table::ObservationTable)
+#     print_table(table)
+#     println("Is it equivalent (yes/no)? ")
+#     is_equivalent = readline()
+#     if is_equivalent == "yes"
+#         return true, ""
+#     else
+#         println("Enter counter example: ")
+#         counter_example = readline()
+#         return false, counter_example
+#     end
+# end
+
+# function membership(word::String)
+#     println("Is this \"$word\" part of the language (1/0)? ")
+#     is_membership = readline()
+#     if is_membership == "1"
+#         return true
+#     else
+#         return false
+#     end
+# end
 
 function read_parameters(filename::String)
     open(filename, "r") do file
@@ -124,4 +178,4 @@ function lstar(alphabet::Set{Char})
     end
 end
 
-lstar(Set(['a', 'b']))
+lstar(Set(['L', 'R']))
